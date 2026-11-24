@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      # Unit tests always run. EvaluationIT runs only when the OPENAI_API_KEY secret is set
+      # and data/popia.pdf is committed. It uses Testcontainers (Docker is available on ubuntu-latest).
+      - name: Build and test
+        run: mvn -B verify
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Upload evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: target/eval-report.json
+          if-no-files-found: ignore
+
+      - name: Build Docker image
+        run: docker build -t comply-za .

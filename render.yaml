@@ -1,0 +1,44 @@
+# Render Blueprint: Dashboard -> New -> Blueprint -> pick this repo.
+# Frankfurt is the closest Render region to South Africa.
+#
+# Free setup: Render free web service + free Postgres, Google Gemini (free tier) for AI.
+# - The free web service sleeps after 15 minutes idle; the next visit takes about a minute to wake it.
+# - The free Postgres database expires 30 days after it is created. Upgrade the plan
+#   (or point DB_* at Neon) to keep it.
+
+databases:
+  - name: complyza-db
+    region: frankfurt
+    plan: free
+    postgresMajorVersion: "17"
+    databaseName: complyza
+    user: complyza
+services:
+  - type: web
+    name: complyza
+    runtime: docker
+    region: frankfurt
+    plan: free
+    healthCheckPath: /actuator/health
+    autoDeploy: true
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod,gemini
+      - key: DB_HOST
+        fromDatabase: { name: complyza-db, property: host }
+      - key: DB_PORT
+        fromDatabase: { name: complyza-db, property: port }
+      - key: DB_NAME
+        fromDatabase: { name: complyza-db, property: database }
+      - key: DB_USER
+        fromDatabase: { name: complyza-db, property: user }
+      - key: DB_PASSWORD
+        fromDatabase: { name: complyza-db, property: password }
+      - key: GEMINI_API_KEY
+        sync: false            # entered in the dashboard, never committed
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ANALYST_PASSWORD
+        sync: false
+      - key: GEMINI_CHAT_MODEL
+        value: gemini-2.5-flash

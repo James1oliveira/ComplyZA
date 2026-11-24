@@ -1,0 +1,42 @@
+[
+  {
+    "question": "What security measures must a responsible party take to protect personal information?",
+    "expectedSections": ["19"]
+  },
+  {
+    "question": "What must happen when there are reasonable grounds to believe personal information was accessed by an unauthorised person?",
+    "expectedSections": ["22"]
+  },
+  {
+    "question": "When may a responsible party transfer personal information to a third party in a foreign country?",
+    "expectedSections": ["72"]
+  },
+  {
+    "question": "Can a data subject withdraw consent or object to the processing of their personal information?",
+    "expectedSections": ["11"]
+  },
+  {
+    "question": "Is processing of special personal information such as religious beliefs or health allowed?",
+    "expectedSections": ["26", "27"]
+  },
+  {
+    "question": "Under what conditions may personal information of children be processed?",
+    "expectedSections": ["34", "35"]
+  },
+  {
+    "question": "What are the rules for direct marketing by means of unsolicited electronic communications?",
+    "expectedSections": ["69"]
+  },
+  {
+    "question": "Can a data subject request confirmation of whether a responsible party holds personal information about them?",
+    "expectedSections": ["23"]
+  },
+  {
+    "question": "What are the duties and responsibilities of an Information Officer?",
+    "expectedSections": ["55"]
+  },
+  {
+    "question": "How long may records of personal information be retained?",
+    "expectedSections": ["14"]
+  }
+]

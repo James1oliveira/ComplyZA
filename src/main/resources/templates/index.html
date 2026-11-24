@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Comply ZA</title>
+    <link rel="stylesheet" th:href="@{/css/app.css}">
+</head>
+<body>
+<header>
+    <h1>Comply ZA</h1>
+    <p>Ask about South African regulations. Every answer is checked against the source text.</p>
+</header>
+
+<main>
+    <form id="ask-form">
+        <label for="question">Your question</label>
+        <textarea id="question" rows="3" maxlength="1000"
+                  placeholder="e.g. When may a responsible party transfer personal information outside South Africa?"></textarea>
+        <div class="row">
+            <button type="submit" id="ask-btn">Ask</button>
+            <span id="status" role="status"></span>
+        </div>
+    </form>
+
+    <section id="result" hidden>
+        <div class="panes">
+            <article class="pane">
+                <div class="answer-head">
+                    <h2>Answer</h2>
+                    <span id="confidence" class="badge"></span>
+                </div>
+                <p id="answer"></p>
+                <p id="redactions" class="note" hidden></p>
+                <p id="rejected" class="note" hidden></p>
+                <p id="asat" class="note"></p>
+                <p id="disclaimer" class="disclaimer"></p>
+            </article>
+            <aside class="pane">
+                <h2>Verified citations</h2>
+                <ol id="citations"></ol>
+                <h3>Sections consulted</h3>
+                <ul id="sources"></ul>
+            </aside>
+        </div>
+    </section>
+</main>
+
+<script>
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+        ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+    const link = (url, text) => url
+        ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(text)}</a>` : esc(text);
+
+    $('ask-form').addEventListener('submit', async e => {
+        e.preventDefault();
+        const question = $('question').value.trim();
+        if (!question) return;
+        $('ask-btn').disabled = true;
+        $('status').textContent = 'Searching the regulations…';
+        try {
+            const res = await fetch('/api/ask', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({question})
+            });
+            if (!res.ok) throw new Error(`Request failed (${res.status})`);
+            render(await res.json());
+            $('status').textContent = '';
+        } catch (err) {
+            $('status').textContent = err.message;
+        } finally {
+            $('ask-btn').disabled = false;
+        }
+    });
+
+    function render(r) {
+        $('result').hidden = false;
+        $('answer').textContent = r.answer;
+        const badge = $('confidence');
+        badge.textContent = r.confidence.replace('_', ' ').toLowerCase();
+        badge.className = 'badge ' + r.confidence.toLowerCase();
+
+        const red = Object.entries(r.redactions || {});
+        $('redactions').hidden = red.length === 0;
+        $('redactions').textContent = 'Personal information removed from your question before processing: '
+            + red.map(([k, v]) => `${v} ${k}`).join(', ');
+
+        $('rejected').hidden = !r.rejectedCitations;
+        $('rejected').textContent = `${r.rejectedCitations} citation(s) were removed because the quote did not match the source text.`;
+
+        $('asat').textContent = r.asAt?.length ? 'Sources as at: ' + r.asAt.join('; ') : '';
+        $('disclaimer').textContent = r.disclaimer;
+
+        $('citations').innerHTML = r.citations.length
+            ? r.citations.map(c => `<li>
+                    <div class="cite-head">[${esc(c.sourceId)}] ${link(c.sourceUrl, `${c.act} section ${c.section}`)}
+                    ${c.heading ? `<span class="muted">- ${esc(c.heading)}</span>` : ''}</div>
+                    <blockquote><mark>${esc(c.quote)}</mark></blockquote>
+                </li>`).join('')
+            : '<li class="muted">No verified citations.</li>';
+
+        $('sources').innerHTML = r.sourcesConsulted
+            .map(s => `<li>[${esc(s.sourceId)}] ${link(s.sourceUrl, s.label)} ${s.heading ? '<span class="muted">- ' + esc(s.heading) + '</span>' : ''}</li>`)
+            .join('');
+    }
+</script>
+</body>
+</html>
