@@ -6,6 +6,7 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.reader.pdf.PagePdfDocumentReader;
 import org.springframework.ai.reader.pdf.config.PdfDocumentReaderConfig;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -33,10 +34,21 @@ public class IngestionService {
     private final VectorStore vectorStore;
     private final JdbcTemplate jdbc;
     private final LegalSectionParser parser = new LegalSectionParser();
+    private final int batchSize;
+    private final long batchPauseMillis;
 
-    public IngestionService(VectorStore vectorStore, JdbcTemplate jdbc) {
+    /**
+     * @param batchSize         chunks embedded per call; 0 = all at once (fine for local Ollama)
+     * @param batchPauseSeconds pause between batches, to stay under hosted rate limits
+     *                          (Gemini free tier: 100 embedding requests per minute)
+     */
+    public IngestionService(VectorStore vectorStore, JdbcTemplate jdbc,
+                            @Value("${app.ingest.batch-size:0}") int batchSize,
+                            @Value("${app.ingest.batch-pause-seconds:0}") int batchPauseSeconds) {
         this.vectorStore = vectorStore;
         this.jdbc = jdbc;
+        this.batchSize = batchSize;
+        this.batchPauseMillis = batchPauseSeconds * 1000L;
     }
 
     public record IngestResult(String status, String act, String versionLabel, int chunks, int sections,
@@ -70,7 +82,7 @@ public class IngestionService {
 
         // Embed and store the new version first; only then remove the old one,
         // so a failed embedding call never leaves the Act missing.
-        vectorStore.add(docs);
+        addInBatches(docs);
         int removed = jdbc.update("""
                 DELETE FROM vector_store
                 WHERE metadata ->> 'act' = ? AND metadata ->> 'ingestionId' <> ?
@@ -86,6 +98,62 @@ public class IngestionService {
                 actKey, versionLabel, sections, docs.size(), removed);
         return new IngestResult("INGESTED", actKey, versionLabel, docs.size(), sections, ingestionId,
                 removed > 0 ? "Replaced " + removed + " chunks from a previous version." : "New Act loaded.");
+    }
+
+    /** Embeds and stores the chunks, in batches with pauses when a hosted API's rate limit requires it. */
+    private void addInBatches(List<Document> docs) {
+        if (batchSize <= 0 || docs.size() <= batchSize) {
+            addWithRateLimitRetry(docs);
+            return;
+        }
+        for (int from = 0; from < docs.size(); from += batchSize) {
+            if (from > 0) {
+                pause(batchPauseMillis);
+            }
+            List<Document> batch = docs.subList(from, Math.min(from + batchSize, docs.size()));
+            log.info("Embedding chunks {}-{} of {}", from + 1, from + batch.size(), docs.size());
+            addWithRateLimitRetry(batch);
+        }
+    }
+
+    /** If the API still says "too many requests" (HTTP 429), wait a minute for the quota to reset and try again. */
+    private void addWithRateLimitRetry(List<Document> batch) {
+        int attempts = 0;
+        while (true) {
+            try {
+                vectorStore.add(batch);
+                return;
+            } catch (RuntimeException e) {
+                attempts++;
+                if (attempts >= 4 || !isRateLimited(e)) {
+                    throw e;
+                }
+                log.warn("Embedding rate limit reached; waiting 60s before retrying (attempt {} of 3)", attempts);
+                pause(60_000);
+            }
+        }
+    }
+
+    static boolean isRateLimited(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            String msg = t.getMessage();
+            if (msg != null && (msg.contains("429") || msg.contains("RESOURCE_EXHAUSTED"))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void pause(long millis) {
+        if (millis <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting between embedding batches", e);
+        }
     }
 
     public List<Map<String, Object>> documents() {

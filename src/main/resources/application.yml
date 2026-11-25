@@ -123,3 +123,8 @@ spring:
           api-key: ${GEMINI_API_KEY}
 app:
   chat-model-label: gemini/${GEMINI_CHAT_MODEL:gemini-2.5-flash}
+  ingest:
+    # Gemini free tier allows 100 embedding requests per minute (each chunk counts as one).
+    # 40 chunks every 35 seconds stays well under that: POPIA's 128 chunks take about 2 minutes.
+    batch-size: 40
+    batch-pause-seconds: 35
